@@ -1,0 +1,73 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Basic member information and balances",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "fullName": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "memberNumber": { "type": "string" },
+        "identityId": { "type": "string" },
+        "kraPin": { "type": "string" },
+        "savingsBalance": { "type": "number" },
+        "sharesBalance": { "type": "number" },
+        "loanBalance": { "type": "number" },
+        "isAdmin": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "fullName", "phoneNumber", "memberNumber"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial activity record",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["deposit", "withdraw", "transfer_out", "transfer_in", "loan_repayment"] },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "completed", "failed"] },
+        "relatedMemberId": { "type": "string" },
+        "description": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "amount", "status", "timestamp"]
+    },
+    "Loan": {
+      "title": "Loan Application",
+      "description": "Loan requests and details",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "interestRate": { "type": "number" },
+        "durationMonths": { "type": "integer" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "repaid"] },
+        "guarantors": { "type": "array", "items": { "type": "string" } },
+        "documents": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "repaymentSchedule": { "type": "array" }
+      },
+      "required": ["userId", "amount", "durationMonths", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "Individual member profile"
+    },
+    "transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Global transaction logs (secured by ownership)"
+    },
+    "loans/{loanId}": {
+      "schema": "Loan",
+      "description": "Loan applications"
+    },
+    "admins/{adminId}": {
+      "schema": { "type": "object", "properties": { "uid": { "type": "string" } } },
+      "description": "Trusted admin lookups"
+    }
+  }
+}

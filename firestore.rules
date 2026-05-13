@@ -1,0 +1,94 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 3. Primitive Definitions
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isAdmin() { 
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); 
+    }
+    function isVerified() {
+      return request.auth.token.email_verified == true;
+    }
+
+    // Validation Helpers
+    function isValidUser(data) {
+      return data.keys().hasAll(['fullName', 'phoneNumber', 'memberNumber']) &&
+             data.fullName is string && data.fullName.size() <= 100 &&
+             data.phoneNumber is string && data.phoneNumber.size() <= 20 &&
+             data.memberNumber is string && data.memberNumber.size() <= 50;
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['userId', 'type', 'amount', 'status', 'timestamp']) &&
+             data.userId == request.auth.uid &&
+             data.amount is number && data.amount > 0 &&
+             data.type in ['deposit', 'withdraw', 'transfer_out', 'transfer_in', 'loan_repayment'] &&
+             data.status in ['pending', 'completed', 'failed'] &&
+             data.timestamp == request.time;
+    }
+
+    function isValidLoan(data) {
+      return data.keys().hasAll(['userId', 'amount', 'durationMonths', 'status', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             data.amount is number && data.amount > 0 &&
+             data.durationMonths is int && data.durationMonths > 0 &&
+             data.status in ['pending', 'approved', 'rejected', 'repaid'] &&
+             data.createdAt == request.time;
+    }
+
+    // 4. Collection Matches
+    
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) && isOwner(userId) && isValidUser(incoming()) && 
+                    !incoming().keys().hasAny(['isAdmin', 'savingsBalance', 'sharesBalance', 'loanBalance']);
+      allow update: if isValidId(userId) && (
+        (isOwner(userId) && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'phoneNumber']) &&
+         isValidUser(incoming())) ||
+        isAdmin()
+      );
+    }
+
+    match /transactions/{transactionId} {
+      allow get: if isValidId(transactionId) && isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(transactionId) && isSignedIn() && isValidTransaction(incoming());
+      allow update: if false; 
+    }
+
+    match /loans/{loanId} {
+      allow get: if isValidId(loanId) && isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(loanId) && isSignedIn() && isValidLoan(incoming()) && incoming().status == 'pending' &&
+                    (incoming().guarantors.size() == 0 || (incoming().guarantors.size() <= 6 && incoming().guarantors[0] is string));
+      
+      allow update: if isValidId(loanId) && (
+        isSignedIn() && (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'interestRate'])) ||
+          (isOwner(existing().userId) && existing().status == 'pending' && 
+           incoming().diff(existing()).affectedKeys().hasOnly(['status']) && 
+           incoming().status == 'cancelled')
+        )
+      );
+    }
+
+    match /admins/{adminId} {
+      allow read: if isSignedIn(); // Needed for isAdmin() helper check
+      allow write: if false; // Only manageable via console/backend
+    }
+  }
+}
