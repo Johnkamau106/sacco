@@ -5,9 +5,14 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   
-  --color-brand: #d32f2f;
-  --color-brand-dark: #b71c1c;
-  --color-brand-light: #ef5350;
+  --color-brand: #C1272D; /* Maasai Red */
+  --color-brand-dark: #8B1B1F; /* Dark Maasai Red */
+  --color-brand-light: #E33E44; /* Radiant Red Accent */
+  --color-brand-gold: #D4A017; /* Savannah Gold */
+  --color-amber-gold: #D4A017;
+  --color-safari-black: #121212;
+  --color-ivory-sand: #F7F2E9;
+  --color-emerald-green: #0F8B6D;
 }
 
 @layer base {
@@ -20,6 +25,42 @@
 @layer utilities {
   .glass {
     @apply bg-white/90 backdrop-blur-xl border border-white/20;
+  }
+
+  .glass-dark {
+    background: rgba(18, 18, 18, 0.7);
+    backdrop-filter: blur(25px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .maasai-sunset-gradient {
+    background: linear-gradient(135deg, #C1272D 0%, #D4A017 35%, #121212 100%);
+  }
+
+  .bead-pattern-bg {
+    background-image: radial-gradient(circle, rgba(193, 39, 45, 0.04) 1px, transparent 1px), 
+                      radial-gradient(circle, rgba(212, 160, 23, 0.04) 1px, transparent 1px);
+    background-size: 16px 16px;
+    background-position: 0 0, 8px 8px;
+  }
+
+  .bead-pattern-bg-dark {
+    background-image: radial-gradient(circle, rgba(193, 39, 45, 0.08) 1px, transparent 1px), 
+                      radial-gradient(circle, rgba(212, 160, 23, 0.06) 1px, transparent 1px);
+    background-size: 20px 20px;
+    background-position: 0 0, 10px 10px;
+  }
+
+  .maasai-bead-divider {
+    height: 3px;
+    background: repeating-linear-gradient(90deg, 
+      #C1272D 0px, #C1272D 6px, 
+      #D4A017 6px, #D4A017 12px, 
+      #0F8B6D 12px, #0F8B6D 18px, 
+      #F7F2E9 18px, #F7F2E9 24px
+    );
+    border-radius: 9999px;
+    opacity: 0.85;
   }
 
   .safe-p-b {

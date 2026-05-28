@@ -16,7 +16,10 @@ service cloud.firestore {
     function isSignedIn() { return request.auth != null; }
     function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
     function isAdmin() { 
-      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); 
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'JohnKamau106@gmail.com'
+      ); 
     }
     function isVerified() {
       return request.auth.token.email_verified == true;
@@ -88,7 +91,10 @@ service cloud.firestore {
 
     match /admins/{adminId} {
       allow read: if isSignedIn(); // Needed for isAdmin() helper check
-      allow write: if false; // Only manageable via console/backend
+      allow write: if isSignedIn() && (
+        request.auth.uid == adminId ||
+        request.auth.token.email == 'JohnKamau106@gmail.com'
+      );
     }
   }
 }

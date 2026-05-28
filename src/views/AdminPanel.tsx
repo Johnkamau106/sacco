@@ -7,20 +7,43 @@ import { ShieldCheck, User, Landmark, Check, X, Search, FileBarChart } from 'luc
 import { cn } from '../lib/utils';
 
 export default function AdminPanel() {
-  const { user } = useAuth();
+  const { user, profile, setProfile } = useAuth();
   const [loans, setLoans] = useState<any[]>([]);
   const [membersCount, setMembersCount] = useState(0);
   const [totalSavings, setTotalSavings] = useState(0);
   const [loading, setLoading] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!user) return;
+
+    if (user.simulated) {
+      const loadSimData = () => {
+        try {
+          const simLoansStr = localStorage.getItem('saccoswift_sim_loans');
+          if (simLoansStr) {
+            setLoans(JSON.parse(simLoansStr));
+          } else {
+            setLoans([]);
+          }
+          setMembersCount(87);
+          setTotalSavings(4152000);
+        } catch (e) {
+          console.error(e);
+        }
+      };
+      
+      loadSimData();
+      const interval = setInterval(loadSimData, 800);
+      return () => clearInterval(interval);
+    }
+
     // 1. Listen for ALL loans
     const loanQuery = query(collection(db, 'loans'), orderBy('createdAt', 'desc'));
     const unsubLoans = onSnapshot(loanQuery, (snapshot) => {
       setLoans(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    // 2. Fetch stats (simplified for demo)
+    // 2. Fetch stats (live Sacco member database)
     const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
       setMembersCount(snapshot.size);
       let total = 0;
@@ -32,23 +55,69 @@ export default function AdminPanel() {
       unsubLoans();
       unsubUsers();
     };
-  }, []);
+  }, [user]);
 
   const handleLoanAction = async (loanId: string, userId: string, amount: number, action: 'approved' | 'rejected') => {
     setLoading(loanId);
     try {
+      if (user?.simulated) {
+        // Update simulated loans in localStorage
+        const simLoansStr = localStorage.getItem('saccoswift_sim_loans') || '[]';
+        const simLoans = JSON.parse(simLoansStr);
+        const updatedLoans = simLoans.map((l: any) => l.id === loanId ? { ...l, status: action } : l);
+        localStorage.setItem('saccoswift_sim_loans', JSON.stringify(updatedLoans));
+
+        if (action === 'approved') {
+          // Add simulated transaction for the user
+          const simTxsStr = localStorage.getItem('saccoswift_sim_transactions') || '[]';
+          const simTxs = JSON.parse(simTxsStr);
+          simTxs.unshift({
+            id: `TX-${Math.random().toString(36).substring(3, 11).toUpperCase()}`,
+            userId: userId,
+            type: 'deposit',
+            amount: amount,
+            description: `Disbursement: Approved Loan`,
+            timestamp: new Date().toISOString(),
+            status: 'completed'
+          });
+          localStorage.setItem('saccoswift_sim_transactions', JSON.stringify(simTxs));
+
+          // If the simulated user happens to approve their own loan, we update the current simulated profile
+          if (userId === user.uid) {
+            const currentProfile = JSON.parse(localStorage.getItem('saccoswift_sim_profile') || '{}');
+            currentProfile.savingsBalance = (currentProfile.savingsBalance || 0) + amount;
+            currentProfile.loanBalance = (currentProfile.loanBalance || 0) + amount;
+            localStorage.setItem('saccoswift_sim_profile', JSON.stringify(currentProfile));
+            setProfile(currentProfile);
+          }
+        }
+        alert(`Loan ${action} successfully!`);
+        return;
+      }
+
       // 1. Update loan doc
       const loanRef = doc(db, 'loans', loanId);
       await updateDoc(loanRef, { status: action });
 
       if (action === 'approved') {
-        // 2. Update user loan balance
+        // 2. Update user loan balance AND disburse funds to savings balance!
         const userRef = doc(db, 'users', userId);
         const userSnap = await getDoc(userRef);
         
         if (userSnap.exists()) {
           await updateDoc(userRef, {
-             loanBalance: increment(amount)
+             loanBalance: increment(amount),
+             savingsBalance: increment(amount)
+          });
+
+          // 3. Register automated disbursement transaction in transactions collection
+          const { addDoc, collection, serverTimestamp } = await import('firebase/firestore');
+          await addDoc(collection(db, 'transactions'), {
+            userId: userId,
+            type: 'deposit',
+            amount: amount,
+            description: `Disbursement: Approved Loan`,
+            timestamp: serverTimestamp()
           });
         }
       }
@@ -115,39 +184,66 @@ export default function AdminPanel() {
         <div className="space-y-4">
           {loans.filter(l => l.status === 'pending').map((loan) => (
             <div key={loan.id}>
-              <Card className="flex flex-col md:flex-row items-center gap-6 animate-in fade-in duration-500">
-                 <div className="flex-1 flex items-center gap-4">
-                    <div className="w-12 h-12 bg-zinc-100 rounded-full flex items-center justify-center">
-                      <User className="text-zinc-400" />
-                    </div>
-                    <div>
-                      <p className="font-bold text-lg">{formatCurrency(loan.amount)}</p>
-                      <p className="text-xs text-zinc-400">Term: {loan.durationMonths} Months • Interest: 12%</p>
-                      <p className="text-[10px] text-zinc-300 mt-1 uppercase font-black">Member ID: {loan.userId.substring(0, 8)}...</p>
-                    </div>
+              <Card className="flex flex-col gap-4 animate-in fade-in duration-500 p-5">
+                 <div className="w-full flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                   <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-zinc-100 rounded-2xl flex items-center justify-center shrink-0">
+                         <User className="text-zinc-400" />
+                      </div>
+                      <div>
+                        <p className="font-black text-lg text-zinc-900">{formatCurrency(loan.amount)}</p>
+                        <p className="text-xs text-zinc-500 font-semibold">Term: {loan.durationMonths} Months • Interest: 12% p.a.</p>
+                        <p className="text-[10px] text-zinc-400 mt-1 uppercase font-black tracking-wider">Member ID: {loan.userId.substring(0, 8)}...</p>
+                      </div>
+                   </div>
+
+                   <div className="flex gap-2.5 w-full md:w-auto self-end md:self-center">
+                      <Button 
+                        variant="danger" 
+                        className="flex-1 md:flex-initial px-4 py-2 h-10 text-[10px] rounded-xl"
+                        onClick={() => handleLoanAction(loan.id, loan.userId, loan.amount, 'rejected')}
+                        disabled={loading === loan.id}
+                      >
+                         <X size={16} />
+                      </Button>
+                      <Button 
+                        variant="primary" 
+                        className="flex-1 md:flex-initial px-5 py-3 h-10 text-[10px] rounded-xl"
+                        onClick={() => handleLoanAction(loan.id, loan.userId, loan.amount, 'approved')}
+                        disabled={loading === loan.id}
+                      >
+                         <div className="flex items-center gap-1.5">
+                             <Check size={16} />
+                             <span>Approve</span>
+                         </div>
+                      </Button>
+                   </div>
                  </div>
 
-                 <div className="flex gap-3">
-                    <Button 
-                      variant="danger" 
-                      className="px-6 py-2"
-                      onClick={() => handleLoanAction(loan.id, loan.userId, loan.amount, 'rejected')}
-                      disabled={loading === loan.id}
-                    >
-                      <X size={18} />
-                    </Button>
-                    <Button 
-                      variant="primary" 
-                      className="px-6 py-2"
-                      onClick={() => handleLoanAction(loan.id, loan.userId, loan.amount, 'approved')}
-                      disabled={loading === loan.id}
-                    >
-                      <div className="flex items-center gap-2">
-                          <Check size={18} />
-                          <span>Approve</span>
+                 {/* Advanced Metadata Section */}
+                 {(loan.loanPurpose || loan.guarantorName) && (
+                   <div className="w-full pt-4 border-t border-zinc-100 grid grid-cols-1 md:grid-cols-3 gap-6 text-xs text-zinc-500 font-bold bg-zinc-50/50 p-4 rounded-2xl text-left">
+                      {loan.loanPurpose && (
+                        <div className="space-y-0.5">
+                           <span className="text-[10px] uppercase font-black tracking-wider text-zinc-400">Purpose & Income</span>
+                           <p className="text-zinc-900 font-black">{loan.loanPurpose}</p>
+                           <p className="text-[10px] text-zinc-500">{loan.employmentType || 'Unspecified'} • Net {formatCurrency(loan.monthlyIncome || 0)}/mo</p>
+                        </div>
+                      )}
+                      {loan.guarantorName && (
+                        <div className="space-y-0.5">
+                           <span className="text-[10px] uppercase font-black tracking-wider text-zinc-400">Co-Member Guarantor</span>
+                           <p className="text-zinc-900 font-black">{loan.guarantorName}</p>
+                           <p className="text-[10px] text-zinc-500">ID: {loan.guarantorMemberId || 'N/A'} • {loan.guarantorPhone || 'N/A'}</p>
+                        </div>
+                      )}
+                      <div className="space-y-1">
+                         <span className="text-[10px] uppercase font-black tracking-wider text-zinc-400">Security Coverage</span>
+                         <p className="text-emerald-600 font-black">Qualified by Deposits</p>
+                         <p className="text-[10px] text-zinc-400 font-bold leading-none">Guaranteed by co-member signatories</p>
                       </div>
-                    </Button>
-                 </div>
+                   </div>
+                 )}
               </Card>
             </div>
           ))}

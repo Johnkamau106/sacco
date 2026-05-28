@@ -1,6 +1,6 @@
 {
-  "name": "Remix: SaccoSwift",
+  "name": "SaccoSwift",
   "description": "A modern SACCO management platform featuring automated loans, savings tracking, and AI-powered financial coaching.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
